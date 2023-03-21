@@ -138,7 +138,7 @@ static uint8_t sideboard_leds_R;
 #endif
 
 #ifdef VARIANT_TRANSPOTTER
-  extern uint8_t  nunchuk_connected;
+  uint8_t  nunchuk_connected;
   extern float    setDistance;  
 
   static uint8_t  checkRemote = 0;
@@ -164,6 +164,14 @@ int16_t lastSpeedL = 0, lastSpeedR = 0;
 static uint32_t    buzzerTimer_prev = 0;
 static uint32_t    inactivity_timeout_counter;
 static MultipleTap MultipleTapBrake;    // define multiple tap functionality for the Brake pedal
+
+static uint16_t rate = RATE; // Adjustable rate to support multiple drive modes on startup
+
+#ifdef MULTI_MODE_DRIVE
+  static uint8_t drive_mode;
+  static uint16_t max_speed;
+#endif
+
 
 int main(void) {
 
@@ -213,8 +221,40 @@ int main(void) {
   int32_t board_temp_adcFixdt = adc_buffer.temp << 16;  // Fixed-point filter output initialized with current ADC converted to fixed-point
   int16_t board_temp_adcFilt  = adc_buffer.temp;
 
+  #ifdef MULTI_MODE_DRIVE
+    if (adc_buffer.l_tx2 > input1[0].min + 50 && adc_buffer.l_rx2 > input2[0].min + 50) {
+      drive_mode = 2;
+      max_speed = MULTI_MODE_DRIVE_M3_MAX;
+      rate = MULTI_MODE_DRIVE_M3_RATE;
+      rtP_Left.n_max = rtP_Right.n_max = MULTI_MODE_M3_N_MOT_MAX << 4;
+      rtP_Left.i_max = rtP_Right.i_max = (MULTI_MODE_M3_I_MOT_MAX * A2BIT_CONV) << 4;
+    } else if (adc_buffer.l_tx2 > input1[0].min + 50) {
+      drive_mode = 1;
+      max_speed = MULTI_MODE_DRIVE_M2_MAX;
+      rate = MULTI_MODE_DRIVE_M2_RATE;
+      rtP_Left.n_max = rtP_Right.n_max = MULTI_MODE_M2_N_MOT_MAX << 4;
+      rtP_Left.i_max = rtP_Right.i_max = (MULTI_MODE_M2_I_MOT_MAX * A2BIT_CONV) << 4;
+    } else {
+      drive_mode = 0;
+      max_speed = MULTI_MODE_DRIVE_M1_MAX;
+      rate = MULTI_MODE_DRIVE_M1_RATE;
+      rtP_Left.n_max = rtP_Right.n_max = MULTI_MODE_M1_N_MOT_MAX << 4;
+      rtP_Left.i_max = rtP_Right.i_max = (MULTI_MODE_M1_I_MOT_MAX * A2BIT_CONV) << 4;
+    }
+
+    printf("Drive mode %i selected: max_speed:%i acc_rate:%i \r\n", drive_mode, max_speed, rate);
+  #endif
+
   // Loop until button is released
   while(HAL_GPIO_ReadPin(BUTTON_PORT, BUTTON_PIN)) { HAL_Delay(10); }
+
+  #ifdef MULTI_MODE_DRIVE
+    // Wait until triggers are released. Exit if timeout elapses (to unblock if the inputs are not calibrated)
+    int iTimeout = 0;
+    while((adc_buffer.l_rx2 + adc_buffer.l_tx2) >= (input1[0].min + input2[0].min) && iTimeout++ < 300) {
+      HAL_Delay(10);
+    }
+  #endif
 
   while(1) {
     if (buzzerTimer - buzzerTimer_prev > 16*DELAY_IN_MAIN_LOOP) {   // 1 ms = 16 ticks buzzerTimer
@@ -224,7 +264,8 @@ int main(void) {
 
     #ifndef VARIANT_TRANSPOTTER
       // ####### MOTOR ENABLING: Only if the initial input is very small (for SAFETY) #######
-      if (enable == 0 && (!rtY_Left.z_errCode && !rtY_Right.z_errCode) && (input1[inIdx].cmd > -50 && input1[inIdx].cmd < 50) && (input2[inIdx].cmd > -50 && input2[inIdx].cmd < 50)){
+      if (enable == 0 && !rtY_Left.z_errCode && !rtY_Right.z_errCode && 
+          ABS(input1[inIdx].cmd) < 50 && ABS(input2[inIdx].cmd) < 50){
         beepShort(6);                     // make 2 beeps indicating the motor enable
         beepShort(4); HAL_Delay(100);
         steerFixdt = speedFixdt = 0;      // reset filters
@@ -282,8 +323,8 @@ int main(void) {
       #endif
 
       // ####### LOW-PASS FILTER #######
-      rateLimiter16(input1[inIdx].cmd , RATE, &steerRateFixdt);
-      rateLimiter16(input2[inIdx].cmd , RATE, &speedRateFixdt);
+      rateLimiter16(input1[inIdx].cmd, rate, &steerRateFixdt);
+      rateLimiter16(input2[inIdx].cmd, rate, &speedRateFixdt);
       filtLowPass32(steerRateFixdt >> 4, FILTER, &steerFixdt);
       filtLowPass32(speedRateFixdt >> 4, FILTER, &speedFixdt);
       steer = (int16_t)(steerFixdt >> 16);  // convert fixed-point to integer
@@ -292,6 +333,13 @@ int main(void) {
       // ####### VARIANT_HOVERCAR #######
       #ifdef VARIANT_HOVERCAR
       if (inIdx == CONTROL_ADC) {               // Only use use implementation below if pedals are in use (ADC input)
+
+        #ifdef MULTI_MODE_DRIVE
+        if (speed >= max_speed) {
+          speed = max_speed;
+        }
+        #endif
+
         if (!MultipleTapBrake.b_multipleTap) {  // Check driving direction
           speed = steer + speed;                // Forward driving: in this case steer = Brake, speed = Throttle
         } else {
@@ -301,14 +349,19 @@ int main(void) {
       }
       #endif
 
-      // ####### MIXER #######
-      // cmdR = CLAMP((int)(speed * SPEED_COEFFICIENT -  steer * STEER_COEFFICIENT), INPUT_MIN, INPUT_MAX);
-      // cmdL = CLAMP((int)(speed * SPEED_COEFFICIENT +  steer * STEER_COEFFICIENT), INPUT_MIN, INPUT_MAX);
-      mixerFcn(speed << 4, steer << 4, &cmdR, &cmdL);   // This function implements the equations above
+      #if defined(TANK_STEERING) && !defined(VARIANT_HOVERCAR) && !defined(VARIANT_SKATEBOARD) 
+        // Tank steering (no mixing)
+        cmdL = steer; 
+        cmdR = speed;
+      #else 
+        // ####### MIXER #######
+        mixerFcn(speed << 4, steer << 4, &cmdR, &cmdL);   // This function implements the equations above
+      #endif
       
       #ifdef VARIANT_BBCAR
         cmdR = cmdL = bbcarLoop();
       #endif
+
 
       // ####### SET OUTPUTS (if the target change is less than +/- 100) #######
       #ifdef INVERT_R_DIRECTION
@@ -388,17 +441,15 @@ int main(void) {
       #ifdef SUPPORT_NUNCHUK
         if (transpotter_counter % 500 == 0) {
           if (nunchuk_connected == 0 && enable == 0) {
-            if (Nunchuk_Ping()) {
-              HAL_Delay(500);
-              Nunchuk_Init();
-              #ifdef SUPPORT_LCD
-                LCD_SetLocation(&lcd, 0, 0); LCD_WriteString(&lcd, "Nunchuk Control");
-              #endif
-              timeoutCntGen = 0;
-              timeoutFlgGen = 0;
-              HAL_Delay(1000);
-              nunchuk_connected = 1;
-            }
+              if(Nunchuk_Read() == NUNCHUK_CONNECTED) {
+                #ifdef SUPPORT_LCD
+                  LCD_SetLocation(&lcd, 0, 0); LCD_WriteString(&lcd, "Nunchuk Control");
+                #endif
+                nunchuk_connected = 1;
+	      }
+	    } else {
+              nunchuk_connected = 0;
+	    }
           }
         }   
       #endif
@@ -421,14 +472,19 @@ int main(void) {
     #endif
 
     // ####### SIDEBOARDS HANDLING #######
-    #if defined(SIDEBOARD_SERIAL_USART2) && defined(FEEDBACK_SERIAL_USART2)
-      sideboardLeds(&sideboard_leds_L);
+    #if defined(SIDEBOARD_SERIAL_USART2)
       sideboardSensors((uint8_t)Sideboard_L.sensors);
     #endif
-    #if defined(SIDEBOARD_SERIAL_USART3) && defined(FEEDBACK_SERIAL_USART3)
-      sideboardLeds(&sideboard_leds_R);
+    #if defined(FEEDBACK_SERIAL_USART2)
+      sideboardLeds(&sideboard_leds_L);
+    #endif
+    #if defined(SIDEBOARD_SERIAL_USART3)
       sideboardSensors((uint8_t)Sideboard_R.sensors);
     #endif
+    #if defined(FEEDBACK_SERIAL_USART3)
+      sideboardLeds(&sideboard_leds_R);
+    #endif
+    
 
     // ####### CALC BOARD TEMPERATURE #######
     filtLowPass32(adc_buffer.temp, TEMP_FILT_COEF, &board_temp_adcFixdt);
@@ -449,7 +505,7 @@ int main(void) {
         #if defined(DEBUG_SERIAL_PROTOCOL)
           process_debug();
         #else
-          printf("in1:%i in2:%i cmdL:%i cmdR:%i BatADC:%i BatV:%i TempADC:%i Temp:%i\r\n",
+          printf("in1:%i in2:%i cmdL:%i cmdR:%i BatADC:%i BatV:%i TempADC:%i Temp:%i \r\n",
             input1[inIdx].raw,        // 1: INPUT1
             input2[inIdx].raw,        // 2: INPUT2
             cmdL,                     // 3: output command: [-1000, 1000]
@@ -498,34 +554,32 @@ int main(void) {
     poweroffPressCheck();
 
     // ####### BEEP AND EMERGENCY POWEROFF #######
-    if ((TEMP_POWEROFF_ENABLE && board_temp_deg_c >= TEMP_POWEROFF && speedAvgAbs < 20) || (batVoltage < BAT_DEAD && speedAvgAbs < 20)) {  // poweroff before mainboard burns OR low bat 3
-      if (board_temp_deg_c >= TEMP_POWEROFF) printf("# Error: STM32 overtemp: %4.1f°C: power off\r\n", board_temp_deg_c / 10.0);
-      if (batVoltage < BAT_DEAD) printf("# Battery empty: %4.2fV: power off\r\n", batVoltage * BAT_CALIB_REAL_VOLTAGE / BAT_CALIB_ADC / 100.0);
+    if (TEMP_POWEROFF_ENABLE && board_temp_deg_c >= TEMP_POWEROFF && speedAvgAbs < 20){  // poweroff before mainboard burns OR low bat 3
+      #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3)
+        printf("Powering off, temperature is too high\r\n");
+      #endif
+      poweroff();
+    } else if ( BAT_DEAD_ENABLE && batVoltage < BAT_DEAD && speedAvgAbs < 20){
+      #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3)
+        printf("Powering off, battery voltage is too low\r\n");
+      #endif
       poweroff();
     } else if (rtY_Left.z_errCode || rtY_Right.z_errCode) {                                           // 1 beep (low pitch): Motor error, disable motors
-      if (rtY_Left.z_errCode && main_loop_counter % 50 == 0) printf("# Warning: rtY_Left.z_errCode: %i\r\n", rtY_Left.z_errCode);
-      if (rtY_Right.z_errCode && main_loop_counter % 50 == 0) printf("# Warning: rtY_Right.z_errCode: %i\r\n", rtY_Right.z_errCode);
       enable = 0;
       beepCount(1, 24, 1);
     } else if (timeoutFlgADC) {                                                                       // 2 beeps (low pitch): ADC timeout
-      if (timeoutFlgADC && main_loop_counter % 50 == 0) printf("# Warning: ADC timeout\r\n");
       beepCount(2, 24, 1);
     } else if (timeoutFlgSerial) {                                                                    // 3 beeps (low pitch): Serial timeout
-      if (timeoutFlgSerial && main_loop_counter % 50 == 0) printf("# Warning: Serial timeout\r\n");
       beepCount(3, 24, 1);
     } else if (timeoutFlgGen) {                                                                       // 4 beeps (low pitch): General timeout (PPM, PWM, Nunchuk)
-      if (timeoutFlgGen && main_loop_counter % 50 == 0) printf("# Warning: General timeout (PPM, PWM, Nunchuk)\r\n");
       beepCount(4, 24, 1);
     } else if (TEMP_WARNING_ENABLE && board_temp_deg_c >= TEMP_WARNING) {                             // 5 beeps (low pitch): Mainboard temperature warning
-      if (main_loop_counter % 50 == 0) printf("# Warning: STM32 is getting hot: %4.1f°C\r\n", board_temp_deg_c / 10.0);
       beepCount(5, 24, 1);
     } else if (BAT_LVL1_ENABLE && batVoltage < BAT_LVL1) {                                            // 1 beep fast (medium pitch): Low bat 1
-      if (main_loop_counter % 50 == 0) printf("# Warning: Battery is getting empty 1: %4.2fV\r\n", batVoltage * BAT_CALIB_REAL_VOLTAGE / BAT_CALIB_ADC / 100.0);
       beepCount(0, 10, 6);
     } else if (BAT_LVL2_ENABLE && batVoltage < BAT_LVL2) {                                            // 1 beep slow (medium pitch): Low bat 2
-      if (main_loop_counter % 50 == 0) printf("# Warning: Battery is getting empty 2: %4.2fV\r\n", batVoltage * BAT_CALIB_REAL_VOLTAGE / BAT_CALIB_ADC / 100.0);
       beepCount(0, 10, 30);
-    } else if (BEEPS_BACKWARD && ((speed < -50 && speedAvg < 0) || MultipleTapBrake.b_multipleTap)) { // 1 beep fast (high pitch): Backward spinning motors
+    } else if (BEEPS_BACKWARD && (((cmdR < -50 || cmdL < -50) && speedAvg < 0) || MultipleTapBrake.b_multipleTap)) { // 1 beep fast (high pitch): Backward spinning motors
       beepCount(0, 5, 1);
       backwardDrive = 1;
     } else {  // do not beep
@@ -534,14 +588,24 @@ int main(void) {
     }
 
 
+    inactivity_timeout_counter++;
+
     // ####### INACTIVITY TIMEOUT #######
     if (abs(cmdL) > 50 || abs(cmdR) > 50) {
       inactivity_timeout_counter = 0;
-    } else {
-      inactivity_timeout_counter++;
     }
+
+    #if defined(CRUISE_CONTROL_SUPPORT) || defined(STANDSTILL_HOLD_ENABLE)
+      if ((abs(rtP_Left.n_cruiseMotTgt)  > 50 && rtP_Left.b_cruiseCtrlEna) || 
+          (abs(rtP_Right.n_cruiseMotTgt) > 50 && rtP_Right.b_cruiseCtrlEna)) {
+        inactivity_timeout_counter = 0;
+      }
+    #endif
+
     if (inactivity_timeout_counter > (INACTIVITY_TIMEOUT * 60 * 1000) / (DELAY_IN_MAIN_LOOP + 1)) {  // rest of main loop needs maybe 1ms
-      printf("# inactivity timeout: power off\r\n");
+      #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3)
+        printf("Powering off, wheels were inactive for too long\r\n");
+      #endif
       poweroff();
     }
 
