@@ -149,9 +149,13 @@ static uint8_t sideboard_leds_R;
   static uint16_t transpotter_counter = 0;
 #endif
 
-int16_t    speed;                // local variable for speed. -1000 to 1000
-int16_t speedL     = 0, speedR     = 0;
-int16_t lastSpeedL = 0, lastSpeedR = 0;
+#ifdef VARIANT_BBCAR
+  int16_t    speed;                // local variable for speed. -1000 to 1000
+  int16_t speedL     = 0, speedR     = 0;
+  int16_t lastSpeedL = 0, lastSpeedR = 0;
+#else
+  static int16_t    speed;                // local variable for speed. -1000 to 1000
+#endif
 
 #ifndef VARIANT_TRANSPOTTER
   static int16_t  steer;                // local variable for steering. -1000 to 1000
@@ -566,18 +570,40 @@ int main(void) {
       poweroff();
     } else if (rtY_Left.z_errCode || rtY_Right.z_errCode) {                                           // 1 beep (low pitch): Motor error, disable motors
       enable = 0;
+      // #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3)
+        // if (rtY_Left.z_errCode && main_loop_counter % 50 == 0) printf("# Warning: rtY_Left.z_errCode: %i\r\n", rtY_Left.z_errCode);
+        // if (rtY_Right.z_errCode && main_loop_counter % 50 == 0) printf("# Warning: rtY_Right.z_errCode: %i\r\n", rtY_Right.z_errCode);
+      // #endif
       beepCount(1, 24, 1);
     } else if (timeoutFlgADC) {                                                                       // 2 beeps (low pitch): ADC timeout
+      // #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3)
+        // if (main_loop_counter % 50 == 0) printf("# Warning: ADC timeout\r\n");
+      // #endif
       beepCount(2, 24, 1);
     } else if (timeoutFlgSerial) {                                                                    // 3 beeps (low pitch): Serial timeout
+      // #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3)
+        // if (main_loop_counter % 50 == 0) printf("# Warning: Serial timeout\r\n");
+      // #endif
       beepCount(3, 24, 1);
     } else if (timeoutFlgGen) {                                                                       // 4 beeps (low pitch): General timeout (PPM, PWM, Nunchuk)
+      // #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3)
+        // if (main_loop_counter % 50 == 0) printf("# Warning: General timeout (PPM, PWM, Nunchuk)\r\n");
+      // #endif
       beepCount(4, 24, 1);
     } else if (TEMP_WARNING_ENABLE && board_temp_deg_c >= TEMP_WARNING) {                             // 5 beeps (low pitch): Mainboard temperature warning
+      // #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3)
+        // if (main_loop_counter % 50 == 0) printf("# Warning: STM32 is getting hot: %4.1f°C\r\n", board_temp_deg_c / 10.0);
+      // #endif
       beepCount(5, 24, 1);
     } else if (BAT_LVL1_ENABLE && batVoltage < BAT_LVL1) {                                            // 1 beep fast (medium pitch): Low bat 1
+      // #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3)
+        // if (main_loop_counter % 50 == 0) printf("# Warning: Battery is getting empty 1: %4.2fV\r\n", batVoltage * BAT_CALIB_REAL_VOLTAGE / BAT_CALIB_ADC / 100.0);
+      // #endif
       beepCount(0, 10, 6);
     } else if (BAT_LVL2_ENABLE && batVoltage < BAT_LVL2) {                                            // 1 beep slow (medium pitch): Low bat 2
+      // #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3)
+        // if (main_loop_counter % 50 == 0) printf("# Warning: Battery is getting empty 2: %4.2fV\r\n", batVoltage * BAT_CALIB_REAL_VOLTAGE / BAT_CALIB_ADC / 100.0);
+      // #endif
       beepCount(0, 10, 30);
     } else if (BEEPS_BACKWARD && (((cmdR < -50 || cmdL < -50) && speedAvg < 0) || MultipleTapBrake.b_multipleTap)) { // 1 beep fast (high pitch): Backward spinning motors
       beepCount(0, 5, 1);

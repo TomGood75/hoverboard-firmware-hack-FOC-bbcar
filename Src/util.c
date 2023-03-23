@@ -1198,14 +1198,16 @@ void handleTimeout(void) {
       }
     #endif
 
-    // In case of timeout bring the system to a Safe State
-    // if (timeoutFlgADC || timeoutFlgSerial || timeoutFlgGen) {
-    //   ctrlModReq  = OPEN_MODE;                                          // Request OPEN_MODE. This will bring the motor power to 0 in a controlled way
-    //   input1[inIdx].cmd  = 0;
-    //   input2[inIdx].cmd  = 0;
-    // } else {
-    //   ctrlModReq  = ctrlModReqRaw;                                      // Follow the Mode request
-    // }
+    #ifndef VARIANT_BBCAR
+      // In case of timeout bring the system to a Safe State
+      if (timeoutFlgADC || timeoutFlgSerial || timeoutFlgGen) {
+        ctrlModReq  = OPEN_MODE;                                          // Request OPEN_MODE. This will bring the motor power to 0 in a controlled way
+        input1[inIdx].cmd  = 0;
+        input2[inIdx].cmd  = 0;
+      } else {
+        ctrlModReq  = ctrlModReqRaw;                                      // Follow the Mode request
+      }
+    #endif
 
     // Beep in case of Input index change
     if (inIdx && !inIdx_prev) {                                         // rising edge
