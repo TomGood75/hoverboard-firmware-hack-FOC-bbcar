@@ -800,7 +800,7 @@ void cruiseControl(uint8_t button) {
       input2_filtered = input2[inIdx].min;
       
       printf("\r\n");
-      printf("# hoverboard-firmware-hack larsm's Bobby Car Edition\r\n");
+      printf("# hoverboard-firmware-hack-FOC larsm's Bobby Car Edition\r\n");
       printf("# GCC Version: %s\r\n",__VERSION__);
       printf("# Build Date: %s\r\n",__DATE__);
       printf("\r\n");
