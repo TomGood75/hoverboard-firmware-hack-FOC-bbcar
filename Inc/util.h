@@ -110,6 +110,8 @@ void sideboardSensors(uint8_t sensors);
 
 #ifdef VARIANT_BBCAR
   // Poweron Functions
+  int32_t isAroundMin(int16_t value, int16_t minn, int16_t maxx);
+  int32_t isAroundMax(int16_t value, int16_t minn, int16_t maxx);
   void bbcarDetectDrivingMode();
   int16_t bbcarLoop();
 #endif

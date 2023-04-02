@@ -505,7 +505,7 @@ int main(void) {
 
     // ####### DEBUG SERIAL OUT #######
     #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3)
-      if (main_loop_counter % 25 == 0) {    // Send data periodically every 125 ms      
+      if (main_loop_counter % 50 == 0) {    // Send data periodically every 125 ms      
         #if defined(DEBUG_SERIAL_PROTOCOL)
           process_debug();
         #else
@@ -577,7 +577,7 @@ int main(void) {
       beepCount(1, 24, 1);
     } else if (timeoutFlgADC) {                                                                       // 2 beeps (low pitch): ADC timeout
       // #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3)
-        // if (main_loop_counter % 50 == 0) printf("# Warning: ADC timeout\r\n");
+        // if (main_loop_counter % 50 == 0) printf("# Warning: ADC values out of range\r\n");
       // #endif
       beepCount(2, 24, 1);
     } else if (timeoutFlgSerial) {                                                                    // 3 beeps (low pitch): Serial timeout

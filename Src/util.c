@@ -68,7 +68,7 @@ extern volatile uint16_t pwm_captured_ch2_value;
 #endif
 
 #ifdef VARIANT_BBCAR
-  int8_t drive_mode;
+  int8_t drive_mode = 0;
 #endif
 
 
@@ -787,6 +787,31 @@ void cruiseControl(uint8_t button) {
 
     extern int8_t drive_mode;
 
+    int32_t isAroundMin(int16_t value, int16_t minn, int16_t maxx){
+      // todo: replace float because it is slow
+      // delta = (maxx - minn) * 0.05
+      // return(ABS(value - minn) < delta)
+      // ohne float:
+      // delta = ((maxx - minn) * 5) / 100
+      // ohne division:
+      // delta = ((maxx - minn) * 13) >> 8
+      int16_t delta = (((maxx+ADC_MARGIN) - (minn-ADC_MARGIN)) * 5) / 100;  // *0.05
+      return ABS(value - (minn-ADC_MARGIN)) < delta;
+      // the same in float:
+      // return value > (minn - (maxx - minn)*0.05) && value < (minn + (maxx - minn)*0.05);
+    }
+
+    int32_t isAroundMax(int16_t value, int16_t minn, int16_t maxx){
+      // min and max calibration values are saved with ADC_MARGIN already substracted or added. This is useful for calculating throttle range but for detecting driving modes it is not. So here we use the real adc values:
+      int16_t delta_below = (((maxx+ADC_MARGIN) - (minn-ADC_MARGIN)) * 20) / 100;  // *0.2
+      int16_t delta_above = (((maxx+ADC_MARGIN) - (minn-ADC_MARGIN)) * 10) / 100;  // *0.1
+      return value > ((maxx+ADC_MARGIN) - delta_below)
+          && value < ((maxx+ADC_MARGIN) + delta_above);
+      // the same in float:
+      // return value > ((maxx+ADC_MARGIN) - ((maxx+ADC_MARGIN) - (minn-ADC_MARGIN))*0.2)
+      //     && value < ((maxx+ADC_MARGIN) + ((maxx+ADC_MARGIN) - (minn-ADC_MARGIN))*0.1);
+    }
+
      /*
      * Driving mode detection on startup
      * Hold different combinations of forward oder backwart poti on startup to select driving mode.
@@ -808,34 +833,51 @@ void cruiseControl(uint8_t button) {
       printf("# Mode 2: MAX_SPEED_FORWARDS_M2:%i ACC_FORWARDS_M2:%4.2f MAX_SPEED_BACKWARDS_M2:%i ACC_BACKWARDS_M2:%4.2f (no turbo)\r\n", MAX_SPEED_FORWARDS_M2, ACC_FORWARDS_M2, MAX_SPEED_BACKWARDS_M2, ACC_BACKWARDS_M2);
       printf("# Mode 3: MAX_SPEED_FORWARDS_M3:%i ACC_FORWARDS_M3:%4.2f MAX_SPEED_BACKWARDS_M3:%i ACC_BACKWARDS_M3:%4.2f (no turbo)\r\n", MAX_SPEED_FORWARDS_M3, ACC_FORWARDS_M3, MAX_SPEED_BACKWARDS_M3, ACC_BACKWARDS_M3);
       printf("# Mode 4: MAX_SPEED_FORWARDS_M4:%i ACC_FORWARDS_M4:%4.2f MAX_SPEED_BACKWARDS_M4:%i ACC_BACKWARDS_M4:%4.2f (turbo)\r\n", MAX_SPEED_FORWARDS_M4, ACC_FORWARDS_M4, MAX_SPEED_BACKWARDS_M4, ACC_BACKWARDS_M4);
+      printf("# ADC_MARGIN: %i\r\n", ADC_MARGIN);
       printf("\r\n");
 
       // ####### driving modes #######
 
-      // beim einschalten gashebel gedrueckt halten um modus einzustellen:
-      // Drive Mode 1, links:     3 kmh, ohne Turbo
-      // Drive Mode 2, default:   6 kmh, ohne Turbo
-      // Drive Mode 3, rechts:   12 kmh, ohne Turbo
-      // Drive Mode 4, l + r:    22 kmh, 29 kmh mit Turbo
-      int16_t start_links  = adc_buffer.l_rx2;  // ADC2, links, rueckwearts, gruen
-      int16_t start_rechts = adc_buffer.l_tx2;  // ADC1, rechts, vorwaerts, blau
+      // Hold the following potis to choose driving mode while poweron:
+      // Drive Mode 1, left:      3 kmh, no Turbo
+      // Drive Mode 2, default:   6 kmh, no Turbo
+      // Drive Mode 3, right:    12 kmh, no Turbo
+      // Drive Mode 4, l + r:    22 kmh, 39 kmh with Turbo
+      int16_t start_left  = input2[inIdx].raw;  // ADC2, left, backward, green
+      int16_t start_right = input1[inIdx].raw;  // ADC1, right, foward, blue
       HAL_Delay(300);
-      if(start_rechts > (input1[inIdx].max - (input1[inIdx].max - input1[inIdx].min)*0.2) && start_links > (input2[inIdx].max - (input2[inIdx].max - input2[inIdx].min)*0.2)){  // Mode 4
+      if(isAroundMax(start_left, input2[inIdx].min, input2[inIdx].max) && isAroundMax(start_right, input1[inIdx].min, input1[inIdx].max)){  // Mode 4
         drive_mode = 4;
         beepShortMany2(4);
-      } else if(start_rechts > (input1[inIdx].max - (input1[inIdx].max - input1[inIdx].min)*0.2)){  // Mode 3
+      } else if(isAroundMin(start_left, input2[inIdx].min, input2[inIdx].max) && isAroundMax(start_right, input1[inIdx].min, input1[inIdx].max)){  // Mode 3
         drive_mode = 3;
         beepShortMany2(3);
-      } else if(start_links > (input2[inIdx].max - (input2[inIdx].max - input2[inIdx].min)*0.2)){  // Mode 1
+      } else if(isAroundMax(start_left, input2[inIdx].min, input2[inIdx].max) && isAroundMin(start_right, input1[inIdx].min, input1[inIdx].max)){  // Mode 1
         drive_mode = 1;
         beepShortMany2(1);
-      } else {  // Mode 2
+      } else if(isAroundMin(start_left, input2[inIdx].min, input2[inIdx].max) && isAroundMin(start_right, input1[inIdx].min, input1[inIdx].max)) {  // Mode 2
         drive_mode = 2;
         beepShortMany2(2);
       }
+      printf("# Input1 (right): %i, Input2 (left): %i\r\n", start_right, start_left);
+      if(drive_mode == 0){
+        printf("# Driving mode detection failed. Potis have to be either near min or near max position.\r\n");
+        printf("# Are your potis calibrated? To calibrate: Poweroff, then poweron and hold power button until beep (10s). After a second you will hear a lower beep. Then move both potis to min and max. With potis in min position (which equals min position in this case), short press power button (or wait a few seconds) to save values.\r\n");
+        poweroff();
+      }
       printf("# Mode: %i\r\n", drive_mode);
       printf("# waiting for poti release...\r\n");
-      while(adc_buffer.l_tx2 > (input1[inIdx].max - (input1[inIdx].max - input1[inIdx].min)*0.2) || adc_buffer.l_rx2 > (input2[inIdx].max - (input2[inIdx].max - input2[inIdx].min)*0.2)) HAL_Delay(100); //delay in ms, wait until potis released
+      int counter = 0;
+      while(!isAroundMin(input2[inIdx].raw, input2[inIdx].min, input2[inIdx].max) || !isAroundMin(input1[inIdx].raw, input1[inIdx].min, input1[inIdx].max)){
+        readInputRaw();
+        if(counter++ > 50){
+          printf("# potis are not around min position for 5 sec. powering off...\r\n");
+          printf("# Input1 (right): %i, Input2 (left): %i\r\n", start_right, start_left);
+          poweroff();
+        }
+        HAL_Delay(100); //delay in ms, wait until potis released
+      }
+      // while(adc_buffer.l_tx2 > (input1[inIdx].max - (input1[inIdx].max - input1[inIdx].min)*0.2) || adc_buffer.l_rx2 > (input2[inIdx].max - (input2[inIdx].max - input2[inIdx].min)*0.2)) HAL_Delay(100); //delay in ms, wait until potis released
       printf("# potis released\r\n");
       printf("# driving mode detection done\r\n");
     }
@@ -867,7 +909,7 @@ void cruiseControl(uint8_t button) {
           readInputRaw();
           printf("# Poti significantly out of range:\r\n");
           printf("# Input1: %i, Input2: %i\r\n", input1[inIdx].raw, input2[inIdx].raw);
-          printf("# Limits Input1: TYP:%i MIN:%i MID:%i MAX:%i\r\nLimits Input2: TYP:%i MIN:%i MID:%i MAX:%i\r\n",
+          printf("# Limits Input1: TYP:%i MIN:%i MID:%i MAX:%i\r\n# Limits Input2: TYP:%i MIN:%i MID:%i MAX:%i\r\n",
           input1[inIdx].typ, input1[inIdx].min, input1[inIdx].mid, input1[inIdx].max,
           input2[inIdx].typ, input2[inIdx].min, input2[inIdx].mid, input2[inIdx].max);
           printf("# power off\r\n");
