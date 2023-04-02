@@ -68,6 +68,9 @@ If the ADCs are not calibrated, the board will make a fast di-de-di-de-di-de-di-
 * Make sure BAT_CELLS matches your cell count
 * Re-upload
 
+### Switch to FOC_CTRL on the go
+* press the power button until beep. release the button and immediately press again for >= 2 sek. beep-beep indicates the mode switch to FOC. To switch back to SIN, poweroff and poweron again. Field weakening is not working very well in FOC mode. It is significantly slower.
+
 ### Trouble shooting
 * Sometimes 1 board is on and the other off. This is a rare case. The easiest way to poweroff both boards is to press a poti half way and press the power button. The board which is trying to poweron will detect this as an invalid state and poweroff.
 * The current and max speed calibration function initiated by pressing poweron button in a special way is disabled in thes firmware.

@@ -1792,10 +1792,23 @@ void poweroffPressCheck(void) {
         HAL_Delay(1000);
         if (HAL_GPIO_ReadPin(BUTTON_PORT, BUTTON_PIN)) {  // Double press: Adjust Max Current, Max Speed
           while(HAL_GPIO_ReadPin(BUTTON_PORT, BUTTON_PIN)) { HAL_Delay(10); }
-          #ifndef VARIANT_BBCAR
-          beepLong(8);
-          updateCurSpdLim();
-          beepShort(5);
+          #ifdef VARIANT_BBCAR
+          if (ABS((int)speedRL) < 5) {
+            beepLong(16);
+            HAL_Delay(200);
+            beepLong(16);
+            enable = 0;
+            printf("# motors disabled\r\n");
+            rtP_Left.z_ctrlTypSel = FOC_CTRL;
+            rtP_Right.z_ctrlTypSel = FOC_CTRL;
+            printf("# switched to FOC_CTRL\r\n");
+            enable = 1;
+            printf("# motors enabled\r\n");
+          }
+          #else
+            beepLong(8);
+            updateCurSpdLim();
+            beepShort(5);
           #endif
         } else {                                          // Long press: Calibrate ADC Limits
           #ifdef AUTO_CALIBRATION_ENA
