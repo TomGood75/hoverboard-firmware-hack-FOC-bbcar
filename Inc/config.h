@@ -318,8 +318,8 @@
   // have a look at DEFAULT SETTINGS section:
   //  ADC_MARGIN: tune this value until you are perfectly using your poti range.
 
-  #define PRI_INPUT1            1, 0, 0, 300, 0      // TYPE, MIN, MID, MAX, DEADBAND. See INPUT FORMAT section
-  #define PRI_INPUT2            1, 0, 0, 400, 0      // TYPE, MIN, MID, MAX, DEADBAND. See INPUT FORMAT section
+  #define PRI_INPUT1            1, 0, 0, 4095, 0      // TYPE, MIN, MID, MAX, DEADBAND. See INPUT FORMAT section
+  #define PRI_INPUT2            1, 0, 0, 4095, 0      // TYPE, MIN, MID, MAX, DEADBAND. See INPUT FORMAT section
   // DUAL_INPUTS will not work in this variant because it does not use the output mixer in main.c. eeprom settings for single input:
   #define FLASH_WRITE_KEY     0x1001    // Flash memory writing key. Change this key to ignore the input calibrations from the flash memory and use the ones in config.h
   #define DEBUG_SERIAL_USART3           // right sensor board cable, disable if I2C (nunchuk or lcd) is used!

@@ -579,7 +579,8 @@ int main(void) {
       // #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3)
         // if (main_loop_counter % 50 == 0) printf("# Warning: ADC values out of range\r\n");
       // #endif
-      beepCount(2, 24, 1);
+      // beepCount(2, 24, 1);
+      // adc_error_melody();
     } else if (timeoutFlgSerial) {                                                                    // 3 beeps (low pitch): Serial timeout
       // #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3)
         // if (main_loop_counter % 50 == 0) printf("# Warning: Serial timeout\r\n");

@@ -69,6 +69,7 @@ extern volatile uint16_t pwm_captured_ch2_value;
 
 #ifdef VARIANT_BBCAR
   int8_t drive_mode = 0;
+  int32_t adc_error_break_and_poweroff = 0;
 #endif
 
 
@@ -771,7 +772,7 @@ void cruiseControl(uint8_t button) {
 }
 
 
-/* =========================== BBCAR Functions =========================== */
+/* =========================== START BBCAR Functions =========================== */
 
   #ifdef VARIANT_BBCAR
     static float speedRL = 0.0;  // [-1000.0 to 1000.0] for high precision internal speed calculation
@@ -786,6 +787,19 @@ void cruiseControl(uint8_t button) {
     static float input2_filtered;
 
     extern int8_t drive_mode;
+
+    void adc_error_melody(){
+      for(uint8_t i = 0; i < 6; i++) {
+        buzzerFreq = 6;
+        HAL_Delay(50);
+        buzzerFreq = 0;
+        HAL_Delay(50);
+        buzzerFreq = 8;
+        HAL_Delay(50);
+        buzzerFreq = 0;
+        HAL_Delay(50);
+      }
+    }
 
     int32_t isAroundMin(int16_t value, int16_t minn, int16_t maxx){
       // todo: replace float because it is slow
@@ -893,36 +907,27 @@ void cruiseControl(uint8_t button) {
       #define INPUT_MAX 1000  // [-] Defines the Input target maximum limitation
       #define INPUT_MIN -1000  // [-] Defines the Input target minimum limitation
 
-      // LOW-PASS FILTER (fliessender Mittelwert)
-      input1_filtered = input1_filtered * 0.9 + (float)adc_buffer.l_tx2 * 0.1;  // ADC1, TX, rechts, vorwaerts, blau
-      input2_filtered = input2_filtered * 0.9 + (float)adc_buffer.l_rx2 * 0.1;  // ADC2, RX, links, rueckwearts, gruen
+      // LOW-PASS FILTER (exponential moving average)
+      input1_filtered = input1_filtered * 0.9 + (float)input1[inIdx].raw * 0.1;  // ADC1, TX, rechts, vorwaerts, blau
+      input2_filtered = input2_filtered * 0.9 + (float)input2[inIdx].raw * 0.1;  // ADC2, RX, links, rueckwearts, gruen
 
-      // poti range normalized from INPUT1_MIN - INPUT1_MAX to 0.0 - 1.0
+      // poti range normalized from adc-min - adc-max to 0.0 - 1.0
       acc_cmd = CLAMP((input1_filtered - input1[inIdx].min) / (input1[inIdx].max - input1[inIdx].min), 0, 1.0);
       brk_cmd = CLAMP((input2_filtered - input2[inIdx].min) / (input2[inIdx].max - input2[inIdx].min), 0, 1.0);
 
       // if poti is significantly out of range: break and poweroff. if MAX or MIN gets too close to 0 or 4095 this feature gets disabled.
       // if(input1_filtered < ((input1[inIdx].min < 100) ? 0 : 50) || input1_filtered > ((input1[inIdx].max > 4095-400) ? 4095 : 4095-50) || input2_filtered < ((input2[inIdx].min < 100) ? 0 : 50) || input2_filtered > ((input2[inIdx].max > 4095-400) ? 4095 : 4095-50)){
-      if (timeoutFlgADC || timeoutFlgSerial || timeoutFlgGen) {  // In case of timeout bring the system to a Safe State
+      if (timeoutFlgADC || timeoutFlgSerial || timeoutFlgGen || adc_error_break_and_poweroff) {  // In case of timeout bring the system to a Safe State
+        adc_error_break_and_poweroff = 1;
         acc_cmd = brk_cmd = 0.0;
         if (ABS((int)speedRL) < 5) {  // error beep
-          readInputRaw();
           printf("# Poti significantly out of range:\r\n");
           printf("# Input1: %i, Input2: %i\r\n", input1[inIdx].raw, input2[inIdx].raw);
           printf("# Limits Input1: TYP:%i MIN:%i MID:%i MAX:%i\r\n# Limits Input2: TYP:%i MIN:%i MID:%i MAX:%i\r\n",
           input1[inIdx].typ, input1[inIdx].min, input1[inIdx].mid, input1[inIdx].max,
           input2[inIdx].typ, input2[inIdx].min, input2[inIdx].mid, input2[inIdx].max);
           printf("# power off\r\n");
-          for(uint8_t i = 0; i < 6; i++) {
-            buzzerFreq = 6;
-            HAL_Delay(50);
-            buzzerFreq = 0;
-            HAL_Delay(50);
-            buzzerFreq = 8;
-            HAL_Delay(50);
-            buzzerFreq = 0;
-            HAL_Delay(50);
-          }
+          adc_error_melody();
           poweroff();
         }
       }
@@ -942,25 +947,28 @@ void cruiseControl(uint8_t button) {
                 + acc_cmd * ACC_FORWARDS_M3*5.0  // accelerating forwards
                 - brk_cmd * ACC_BACKWARDS_M3*5.0;  // accelerating backwards
 
-      } else if (drive_mode == 4) {  // Mode 4: without fw: 21 km/h@12s, with fw: 30 km/h@12s
-        if(acc_cmd > 0.8 & brk_cmd > 0.8 & speedRL > 0.7 * (float)INPUT_MAX){  // fahrzeug schnell, gas und bremse voll gedrueckt: field weakening
+      } else if (drive_mode == 4) {  // Mode 4: without fw: 22 km/h@12s, with fw: 39 km/h@12s
+        if (adc_error_break_and_poweroff) {  // emergency braking with less acceleration
+          float acc_forwards_m4 = 0.5;  // breaking acceleration for non-field weakening
+          speedRL = speedRL * (1.0 - (speedRL > 0 ? acc_forwards_m4/MAX_SPEED_FORWARDS_M4*5.0 : ACC_BACKWARDS_M4/MAX_SPEED_BACKWARDS_M4*5.0));  // breaking if poti is not pressed
+          weak = weak * 0.985;  // slowly ramp down field weakening
+        } else if (acc_cmd > 0.8 & brk_cmd > 0.8 & speedRL > 0.7 * (float)INPUT_MAX){  // car is fast, both potis full pressed, with field weakening
           speedRL = speedRL * (1.0 - (speedRL > 0 ? ACC_FORWARDS_M4/MAX_SPEED_FORWARDS_M4*5.0 : ACC_BACKWARDS_M4/MAX_SPEED_BACKWARDS_M4*5.0))  // breaking if poti is not pressed
                   + acc_cmd * ACC_FORWARDS_M4*5.0;  // accelerating forwards
-          weak = weak * 0.95 + 500.0 * 0.05;  // sanftes hinzuschalten des field weakening
-        } else {  // nur gas gedrueckt: normale fahrt ohne field weakening
+          weak = weak * 0.95 + 500.0 * 0.05;  // ramp up field weakening
+        } else {  // normal driving without field weakening
           speedRL = speedRL * (1.0 - (speedRL > 0 ? ACC_FORWARDS_M4/MAX_SPEED_FORWARDS_M4*5.0 : ACC_BACKWARDS_M4/MAX_SPEED_BACKWARDS_M4*5.0))  // breaking if poti is not pressed
                   + acc_cmd * ACC_FORWARDS_M4*5.0  // accelerating forwards
                   - brk_cmd * ACC_BACKWARDS_M4*5.0;  // accelerating backwards
-          weak = weak * 0.95;  // sanftes abschalten des field weakening
+          weak = weak * 0.95;  // ramp down field weakening
         }
-        // weakr = weakl = (int)weak;  // weak should never exceed 400 or 450 MAX!!
       }
 
       return CLAMP((int16_t)(speedRL + weak), INPUT_MIN, FIELD_WEAK_HI);  // clamp output
     }
   #endif
 
-/* =========================== ENDE BBCAR Functions =========================== */
+/* =========================== END BBCAR Functions =========================== */
 
 
 
