@@ -801,29 +801,24 @@ void cruiseControl(uint8_t button) {
       }
     }
 
-    int32_t isAroundMin(int16_t value, int16_t minn, int16_t maxx){
-      // todo: replace float because it is slow
-      // delta = (maxx - minn) * 0.05
-      // return(ABS(value - minn) < delta)
-      // ohne float:
-      // delta = ((maxx - minn) * 5) / 100
-      // ohne division:
-      // delta = ((maxx - minn) * 13) >> 8
-      int16_t delta = (((maxx+ADC_MARGIN) - (minn-ADC_MARGIN)) * 5) / 100;  // *0.05
-      return ABS(value - (minn-ADC_MARGIN)) < delta;
-      // the same in float:
-      // return value > (minn - (maxx - minn)*0.05) && value < (minn + (maxx - minn)*0.05);
+    int32_t isAroundMin(int32_t value, int32_t minn, int32_t maxx){
+      // min and max calibration values are saved with ADC_MARGIN already substracted or added. This is useful for calculating throttle range but for detecting driving modes it is not. So here we use the real adc values:
+      minn -= ADC_MARGIN;
+      maxx += ADC_MARGIN;
+
+      int32_t delta = ((maxx - minn) * 15) / 100;  // *0.15
+      // printf("isAroundMin: minn %i, maxx %i, minn_low %i, value %i, minn_high %i, delta: %i, ABS(value - minn): %i\r\n", minn, maxx, minn-delta, value, minn+delta, delta, ABS(value - minn));
+      return ABS(value - minn) < delta;
     }
 
-    int32_t isAroundMax(int16_t value, int16_t minn, int16_t maxx){
+    int32_t isAroundMax(int32_t value, int32_t minn, int32_t maxx){
       // min and max calibration values are saved with ADC_MARGIN already substracted or added. This is useful for calculating throttle range but for detecting driving modes it is not. So here we use the real adc values:
-      int16_t delta_below = (((maxx+ADC_MARGIN) - (minn-ADC_MARGIN)) * 20) / 100;  // *0.2
-      int16_t delta_above = (((maxx+ADC_MARGIN) - (minn-ADC_MARGIN)) * 10) / 100;  // *0.1
-      return value > ((maxx+ADC_MARGIN) - delta_below)
-          && value < ((maxx+ADC_MARGIN) + delta_above);
-      // the same in float:
-      // return value > ((maxx+ADC_MARGIN) - ((maxx+ADC_MARGIN) - (minn-ADC_MARGIN))*0.2)
-      //     && value < ((maxx+ADC_MARGIN) + ((maxx+ADC_MARGIN) - (minn-ADC_MARGIN))*0.1);
+      minn -= ADC_MARGIN;
+      maxx += ADC_MARGIN;
+
+      int32_t delta = ((maxx - minn) * 15) / 100;  // *0.15
+      // printf("isAroundMax: minn %i, maxx %i, maxx_low %i, value %i, maxx_high %i, delta: %i, ABS(value - maxx): %i\r\n", minn, maxx, maxx-delta, value, maxx+delta, delta, ABS(value - maxx));
+      return ABS(value - maxx) < delta;
     }
 
      /*
@@ -1804,6 +1799,7 @@ void poweroffPressCheck(void) {
             printf("# switched to FOC_CTRL\r\n");
             enable = 1;
             printf("# motors enabled\r\n");
+            speedRL = 0.0;
           }
           #else
             beepLong(8);
@@ -1815,6 +1811,7 @@ void poweroffPressCheck(void) {
           beepLong(16); 
           adcCalibLim();
           beepShort(5);
+          speedRL = 0.0;
           #endif
         }
       } else if (cnt_press > 8) {                         // Short press: power off (80 ms debounce)
