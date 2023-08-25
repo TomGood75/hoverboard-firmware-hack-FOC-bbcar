@@ -178,8 +178,8 @@
 #define INACTIVITY_TIMEOUT        8       // Minutes of not driving until poweroff. it is not very precise.
 #define BEEPS_BACKWARD            1       // 0 or 1
 #define ADC_MARGIN                30     // ADC input margin applied on the raw ADC min and max to make sure the MIN and MAX values are reached even in the presence of noise
-#define ADC_PROTECT_TIMEOUT       100     // ADC Protection: number of wrong / missing input commands before safety state is taken
-#define ADC_PROTECT_THRESH        100     // ADC Protection threshold below/above the MIN/MAX ADC values
+#define ADC_PROTECT_TIMEOUT       150     // ADC Protection: number of wrong / missing input commands before safety state is taken
+#define ADC_PROTECT_THRESH        150     // ADC Protection threshold below/above the MIN/MAX ADC values
 #define AUTO_CALIBRATION_ENA              // Enable/Disable input auto-calibration by holding power button pressed. Un-comment this if auto-calibration is not needed.
 
 /* FILTER is in fixdt(0,16,16): VAL_fixedPoint = VAL_floatingPoint * 2^16. In this case 6553 = 0.1 * 2^16
@@ -316,7 +316,8 @@
   #define CONTROL_ADC           0       // use ADC as input. Number indicates priority for dual-input. Disable CONTROL_SERIAL_USART2, FEEDBACK_SERIAL_USART2, DEBUG_SERIAL_USART2!
 
   // have a look at DEFAULT SETTINGS section:
-  //  ADC_MARGIN: tune this value until you are perfectly using your poti range.
+  //  ADC_MARGIN: tune this value until you are perfectly using your poti range. in driving mode detection it is used to detect unvalid poti values. if for example value is at min position, adcvalue+-ADC_MARGIN are accepted.
+  //  ADC_PROTECT_THRESH: if adcvalue gets beyond adcrange+-ADC_PROTECT_THRESH for ADC_PROTECT_TIMEOUT (time)
 
   #define PRI_INPUT1            1, 0, 0, 4095, 0      // TYPE, MIN, MID, MAX, DEADBAND. See INPUT FORMAT section
   #define PRI_INPUT2            1, 0, 0, 4095, 0      // TYPE, MIN, MID, MAX, DEADBAND. See INPUT FORMAT section
