@@ -316,8 +316,11 @@
   #define CONTROL_ADC           0       // use ADC as input. Number indicates priority for dual-input. Disable CONTROL_SERIAL_USART2, FEEDBACK_SERIAL_USART2, DEBUG_SERIAL_USART2!
 
   // have a look at DEFAULT SETTINGS section:
-  //  ADC_MARGIN: tune this value until you are perfectly using your poti range. in driving mode detection it is used to detect unvalid poti values. if for example value is at min position, adcvalue+-ADC_MARGIN are accepted.
-  //  ADC_PROTECT_THRESH: if adcvalue gets beyond adcrange+-ADC_PROTECT_THRESH for ADC_PROTECT_TIMEOUT (time)
+  //  ADC_MARGIN:
+  //  - while driving normally: tune this value until you are perfectly using your poti range. value too small: car sometimes driving a bit when poti is in min position. the higher the value, the less poti range you have. it acts like a deadband on both ends.
+  //  - in driving mode detection: it is used to detect unvalid poti values. if for example value is at min or max position, adcvalue+-ADC_MARGIN are accepted.
+  //  ADC_PROTECT_THRESH:
+  //  - while driving normally: if adcvalue gets beyond adcrange+-ADC_PROTECT_THRESH for ADC_PROTECT_TIMEOUT (time).
 
   #define PRI_INPUT1            1, 0, 0, 4095, 0      // TYPE, MIN, MID, MAX, DEADBAND. See INPUT FORMAT section
   #define PRI_INPUT2            1, 0, 0, 4095, 0      // TYPE, MIN, MID, MAX, DEADBAND. See INPUT FORMAT section
