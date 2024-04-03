@@ -79,6 +79,10 @@ If the ADCs are not calibrated, the board will make a fast di-de-di-de-di-de-di-
 ### ToDo
 * At the moment it runs on sinus mode, not foc. This is because in older versions field weakening was not working on foc. Have to try again.
 
+### FAQ
+* Why SIN instead of FOC? At the time when I created the code, FOC was not working properly, so I used SIN. ~2 years later I tried FOC again. It was working but driving behaviour was worse.
+* Can I use sideboards, other inputs like nunchuck, serial, my own mixing, ...? No, it is not possible. I heavily modified the structure of the code. I even skipped the orgiginal mixing and made my own one.
+
 ### More info
 * https://github.com/EFeru/hoverboard-firmware-hack-FOC
 * https://larsm.org/allrad-e-bobby-car/
